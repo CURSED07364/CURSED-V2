@@ -1,0 +1,141 @@
+<%- include('partials/header') %>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<main class="main-wrapper">
+  <%- include('partials/sidebar') %>
+  
+  <section style="display: flex; flex-direction: column; gap: 24px;">
+    <div>
+      <h2 style="font-size: 28px; margin-bottom: 4px;">Server Analytics</h2>
+      <p>Analyze server activity logs, message rates, and command execution frequency.</p>
+    </div>
+
+    <!-- Charts Layout -->
+    <div style="display: grid; grid-template-columns: 1fr; gap: 24px;">
+      <div class="glass-panel" style="position: relative; height: 350px;">
+        <h3 style="font-size: 16px; margin-bottom: 16px;">📈 Daily Server Messages</h3>
+        <canvas id="messagesChart" style="max-height: 280px;"></canvas>
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px;">
+        <div class="glass-panel" style="position: relative; height: 300px;">
+          <h3 style="font-size: 16px; margin-bottom: 16px;">⚡ Command Executions</h3>
+          <canvas id="commandsChart" style="max-height: 230px;"></canvas>
+        </div>
+        <div class="glass-panel" style="position: relative; height: 300px;">
+          <h3 style="font-size: 16px; margin-bottom: 16px;">👥 Active Daily Chatters</h3>
+          <canvas id="activeUsersChart" style="max-height: 230px;"></canvas>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+  document.getElementById('nav-analytics').classList.add('active');
+
+  // Parse server analytics injected from EJS
+  const rawData = <%- weeklyStats %>;
+  
+  const dates = rawData.map(d => d.date);
+  const messages = rawData.map(d => d.messagesCount);
+  const commands = rawData.map(d => d.commandsCount);
+  const activeUsers = rawData.map(d => d.activeUsers ? d.activeUsers.length : 0);
+
+  // Styling helpers
+  const purpleGradient = (ctx, chartArea) => {
+    if (!chartArea) return null;
+    const gradient = ctx.createLinearGradient(0, chartArea.bottom, 0, chartArea.top);
+    gradient.addColorStop(0, 'rgba(108, 53, 222, 0.1)');
+    gradient.addColorStop(1, 'rgba(144, 85, 255, 0.5)');
+    return gradient;
+  };
+
+  // Messages Chart
+  const ctxMessages = document.getElementById('messagesChart').getContext('2d');
+  new Chart(ctxMessages, {
+    type: 'line',
+    data: {
+      labels: dates.length > 0 ? dates : ['No Data'],
+      datasets: [{
+        label: 'Messages',
+        data: messages.length > 0 ? messages : [0],
+        borderColor: '#9055ff',
+        borderWidth: 3,
+        fill: true,
+        backgroundColor: function(context) {
+          const chart = context.chart;
+          const {ctx, chartArea} = chart;
+          return purpleGradient(ctx, chartArea);
+        },
+        tension: 0.3
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false }
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: '#a09cb0' } },
+        y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#a09cb0' } }
+      }
+    }
+  });
+
+  // Commands Chart
+  const ctxCommands = document.getElementById('commandsChart').getContext('2d');
+  new Chart(ctxCommands, {
+    type: 'bar',
+    data: {
+      labels: dates.length > 0 ? dates : ['No Data'],
+      datasets: [{
+        label: 'Commands Run',
+        data: commands.length > 0 ? commands : [0],
+        backgroundColor: '#6c35de',
+        borderRadius: 4
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false }
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: '#a09cb0' } },
+        y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#a09cb0' } }
+      }
+    }
+  });
+
+  // Active Users Chart
+  const ctxActiveUsers = document.getElementById('activeUsersChart').getContext('2d');
+  new Chart(ctxActiveUsers, {
+    type: 'line',
+    data: {
+      labels: dates.length > 0 ? dates : ['No Data'],
+      datasets: [{
+        label: 'Active Users',
+        data: activeUsers.length > 0 ? activeUsers : [0],
+        borderColor: '#00fa9a',
+        borderWidth: 2,
+        tension: 0.2
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false }
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: '#a09cb0' } },
+        y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#a09cb0' } }
+      }
+    }
+  });
+</script>
+
+<%- include('partials/footer') %>

@@ -1,0 +1,56 @@
+<%- include('partials/header') %>
+
+<main class="main-wrapper">
+  <%- include('partials/sidebar') %>
+  
+  <section style="display: flex; flex-direction: column; gap: 24px;">
+    <div>
+      <h2 style="font-size: 28px; margin-bottom: 4px;">Economy & XP Settings</h2>
+      <p>Configure server leveling milestones, multiplier settings, and economy modules.</p>
+    </div>
+
+    <!-- Economy Status Info -->
+    <div class="glass-panel">
+      <h3 style="font-size: 18px; margin-bottom: 12px;"><i class="bi bi-wallet2" style="color: var(--accent-glow);"></i> Economy Overview</h3>
+      <p style="margin-bottom: 16px;">The CURSED economy system is active server-wide. Users can claim credits daily, view profile stats, Equip cosmetic skins, and compete in rankings.</p>
+      
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-top: 20px;">
+        <div style="background: rgba(255, 255, 255, 0.02); padding: 16px; border-radius: 8px; border: 1px solid var(--border-color);">
+          <span style="font-size: 12px; color: var(--text-secondary); display: block;">Daily Claim Command</span>
+          <strong>!daily</strong>
+        </div>
+        <div style="background: rgba(255, 255, 255, 0.02); padding: 16px; border-radius: 8px; border: 1px solid var(--border-color);">
+          <span style="font-size: 12px; color: var(--text-secondary); display: block;">Profile Commands</span>
+          <strong>!profile / !xp</strong>
+        </div>
+        <div style="background: rgba(255, 255, 255, 0.02); padding: 16px; border-radius: 8px; border: 1px solid var(--border-color);">
+          <span style="font-size: 12px; color: var(--text-secondary); display: block;">Pets System Shop</span>
+          <strong>!pets shop / !pets buy</strong>
+        </div>
+      </div>
+    </div>
+
+    <!-- Multiplier settings -->
+    <div class="glass-panel">
+      <h3 style="font-size: 18px; margin-bottom: 16px;"><i class="bi bi-rocket-takeoff-fill" style="color: var(--accent-glow);"></i> XP multipliers</h3>
+      <div class="form-group">
+        <label class="form-label">Base XP per message</label>
+        <input type="text" value="15 - 25 XP (Cooldown: 1m)" class="form-input" disabled>
+      </div>
+      <div class="form-group" style="margin-bottom: 0;">
+        <label class="form-label">Premium Server Multiplier Boost</label>
+        <% if (guild.isPremium) { %>
+          <span style="color: var(--success-color); font-weight: bold; display: block; margin-top: 4px;">👑 Active (1.5x Global XP Boost to all server members!)</span>
+        <% } else { %>
+          <span style="color: var(--text-secondary); display: block; margin-top: 4px;">Inactive. Upgrade this server in the **Premium** page to unlock server-wide XP multipliers.</span>
+        <% } %>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+  document.getElementById('nav-economy').classList.add('active');
+</script>
+
+<%- include('partials/footer') %>

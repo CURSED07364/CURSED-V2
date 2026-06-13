@@ -1,0 +1,58 @@
+<%- include('partials/header') %>
+
+<main class="main-wrapper">
+  <%- include('partials/sidebar') %>
+  
+  <section style="display: flex; flex-direction: column; gap: 24px;">
+    <div>
+      <h2 style="font-size: 28px; margin-bottom: 4px;">Audit & Infraction Logs</h2>
+      <p>Review moderation histories, user warnings, and AutoMod triggers.</p>
+    </div>
+
+    <!-- Warnings List Table -->
+    <div class="glass-panel">
+      <h3 style="font-size: 18px; margin-bottom: 16px;">⚠️ Warnings History</h3>
+      
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>User ID</th>
+              <th>Moderator ID</th>
+              <th>Reason</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% if (warnings.length === 0) { %>
+              <tr>
+                <td colspan="5" style="text-align: center; color: var(--text-secondary);">*No warnings issued in this server yet.*</td>
+              </tr>
+            <% } else { %>
+              <% warnings.forEach(warn => { %>
+                <tr>
+                  <td><%= new Date(warn.createdAt).toLocaleDateString() %></td>
+                  <td><code><%= warn.userId %></code></td>
+                  <td><code><%= warn.moderatorId %></code></td>
+                  <td><%= warn.reason %></td>
+                  <td>
+                    <span class="badge" style="background: <%= warn.active ? 'rgba(255, 68, 68, 0.15)' : 'rgba(255,255,255,0.05)' %>; color: <%= warn.active ? 'var(--error-color)' : 'var(--text-secondary)' %>;">
+                      <%= warn.active ? 'ACTIVE' : 'CLEARED' %>
+                    </span>
+                  </td>
+                </tr>
+              <% }) %>
+            <% } %>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+  document.getElementById('nav-logs').classList.add('active');
+</script>
+
+<%- include('partials/footer') %>

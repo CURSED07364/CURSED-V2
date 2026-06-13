@@ -1,0 +1,117 @@
+<%- include('partials/header') %>
+
+<main class="main-wrapper">
+  <%- include('partials/sidebar') %>
+  
+  <section style="display: flex; flex-direction: column; gap: 24px;">
+    <div>
+      <h2 style="font-size: 28px; margin-bottom: 4px;">Premium Management</h2>
+      <p>Configure subscription status for this server and claim premium slots.</p>
+    </div>
+
+    <!-- Active Premium Box -->
+    <div class="glass-panel" style="border-left: 4px solid <%= guild.isPremium ? 'var(--accent-glow)' : 'var(--text-secondary)' %>;">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px;">
+        <div>
+          <h3 style="font-size: 20px; margin-bottom: 8px;">
+            <%= guild.isPremium ? '👑 Premium is Active' : '❌ Premium is Inactive' %>
+          </h3>
+          <% if (guild.isPremium) { %>
+            <p style="font-size: 14px; margin-bottom: 4px;">Activated by User ID: **<%= guild.premiumByUserId %>**</p>
+            <p style="font-size: 14px;">Plan Tier: **<%= guild.premiumTier %>** | Expires At: **<%= guild.premiumExpiresAt ? guild.premiumExpiresAt.toLocaleDateString() : 'N/A' %>**</p>
+          <% } else { %>
+            <p style="font-size: 14px;">Upgrade this server to unlock double XP rewards, lower rate limits, advanced moderation triggers, and custom AI modes.</p>
+          <% } %>
+        </div>
+        
+        <div>
+          <% if (guild.isPremium && guild.premiumByUserId === user.id) { %>
+            <!-- User is the one boosting it. Let them deactivate -->
+            <form action="/dashboard/<%= guild.guildId %>/premium" method="POST" style="display: inline;">
+              <input type="hidden" name="action" value="deactivate">
+              <!-- Actually, since we want simple client side redirects or calls, let's mention they can do this in Discord command or a quick API post -->
+            </form>
+          <% } %>
+        </div>
+      </div>
+    </div>
+
+    <!-- User Slots Status -->
+    <div class="glass-panel">
+      <h3 style="font-size: 18px; margin-bottom: 12px;">👤 Your Subscription Slots</h3>
+      <p style="margin-bottom: 16px;">Plan: **<%= premium.tier %>** | Available Server Quota: **<%= premium.serverQuota %>** slots</p>
+      
+      <% if (premium.tier === 'FREE') { %>
+        <div style="background: rgba(255, 68, 68, 0.1); border: 1px solid rgba(255, 68, 68, 0.2); padding: 16px; border-radius: 8px;">
+          <p style="color: #ff6b6b; font-size: 14px;">You need to purchase a premium subscription to allocate upgrade slots to this server. Type `!subscribe` in Discord to purchase.</p>
+        </div>
+      <% } else { %>
+        <p style="font-size: 14px; color: var(--success-color);">You can allocate your active slots to this server. Run `!premiumservers upgrade` in this guild on Discord to activate!</p>
+      <% } %>
+    </div>
+
+    <!-- Admin dashboard controls (visible to configured administrators) -->
+    <% if (isAdminUser) { %>
+      <div class="glass-panel" style="border: 1px solid rgba(144, 85, 255, 0.3);">
+        <h3 style="font-size: 18px; color: var(--accent-glow); margin-bottom: 16px;">
+          <i class="bi bi-shield-lock"></i> Developer Admin Tools
+        </h3>
+        <p style="font-size: 14px; margin-bottom: 20px;">Use this panel to instantly generate gift redemption codes in the database.</p>
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: end;">
+          <div class="form-group" style="margin-bottom: 0;">
+            <label class="form-label">Gift Code Duration (Days)</label>
+            <input type="number" id="adminDays" value="30" class="form-input" min="1">
+          </div>
+          
+          <div class="form-group" style="margin-bottom: 0;">
+            <label class="form-label">Premium Tier</label>
+            <select id="adminTier" class="form-select">
+              <option value="PREMIUM">PREMIUM</option>
+              <option value="PREMIUM+">PREMIUM+</option>
+            </select>
+          </div>
+        </div>
+        
+        <button onclick="generateAdminCode()" class="btn btn-primary" style="margin-top: 20px;">
+          Generate Code
+        </button>
+
+        <div id="codeResult" style="margin-top: 16px; padding: 12px; border-radius: 8px; background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border-color); display: none;">
+          <span style="font-size: 12px; color: var(--text-secondary); display: block;">Generated Code:</span>
+          <code id="codeText" style="font-size: 16px; font-weight: bold; color: var(--success-color);"></code>
+        </div>
+      </div>
+
+      <script>
+        async function generateAdminCode() {
+          const days = document.getElementById('adminDays').value;
+          const tier = document.getElementById('adminTier').value;
+          
+          try {
+            const res = await fetch('/api/admin/generate-code', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ days, tier })
+            });
+            const data = await res.json();
+            if (data.success) {
+              document.getElementById('codeText').innerText = data.code;
+              document.getElementById('codeResult').style.display = 'block';
+            } else {
+              alert('Failed: ' + data.error);
+            }
+          } catch (err) {
+            alert('Error connecting to API.');
+          }
+        }
+      </script>
+    <% } %>
+  </section>
+</main>
+
+<script>
+  document.getElementById('nav-premium').classList.add('active');
+</script>
+
+<%- include('partials/footer') %>
