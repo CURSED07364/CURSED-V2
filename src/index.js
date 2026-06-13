@@ -6,6 +6,19 @@ const analyticsService = require('./services/analyticsService');
 const config = require('./config');
 const logger = require('./utils/logger');
 
+// Validate required environment variables before anything else
+function validateEnv() {
+  const required = ['DISCORD_TOKEN', 'DISCORD_CLIENT_ID', 'MONGODB_URI'];
+  const missing = required.filter(key => !process.env[key]);
+
+  if (missing.length > 0) {
+    logger.error('Missing required environment variables:', missing.join(', '));
+    process.exit(1);
+  }
+
+  logger.success('Environment variables validated');
+}
+
 // Global Error Catching for Production Uptime (Railway Compatibility)
 process.on('unhandledRejection', (reason, promise) => {
   logger.error('Unhandled Rejection at:', { promise, reason: reason?.stack || reason });
@@ -13,6 +26,7 @@ process.on('unhandledRejection', (reason, promise) => {
 
 process.on('uncaughtException', (err) => {
   logger.error('Uncaught Exception occurred:', { error: err.stack || err });
+  process.exit(1);
 });
 
 async function bootstrap() {
@@ -21,6 +35,9 @@ async function bootstrap() {
   logger.info('==========================================');
 
   try {
+    // 0. Validate environment variables
+    validateEnv();
+
     // 1. Establish database connection
     await connectDatabase();
 

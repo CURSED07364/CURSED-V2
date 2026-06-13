@@ -30,6 +30,7 @@ module.exports = {
   },
   dashboard: {
     url: process.env.DASHBOARD_URL || 'http://localhost:3000',
+    port: parseInt(process.env.PORT || '3000', 10),
     sessionSecret: process.env.SESSION_SECRET,
   },
   ai: {
@@ -39,7 +40,11 @@ module.exports = {
   payments: {
     kofiToken: process.env.KOFI_VERIFICATION_TOKEN || '',
     patreonSecret: process.env.PATREON_WEBHOOK_SECRET || '',
-    bmcSecret: process.env.BMC_WEBHOOK_SECRET || ''
+    bmcSecret: process.env.BMC_WEBHOOK_SECRET || '',
+    stripeKey: process.env.STRIPE_SECRET_KEY || ''
+  },
+  redis: {
+    url: process.env.REDIS_URL || ''
   },
   admins: (process.env.ADMIN_DISCORD_IDS || '').split(',').map(id => id.trim()).filter(Boolean)
 };
