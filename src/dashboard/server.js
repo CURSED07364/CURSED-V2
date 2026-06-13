@@ -485,9 +485,27 @@ function startDashboard(client) {
   });
 
   // Listen
-  app.listen(config.port, () => {
+  const server = app.listen(config.port, () => {
     logger.success(`Web dashboard is running on port ${config.port}`);
   });
+
+  // Graceful shutdown handlers for Railway SIGTERM/SIGINT
+  const shutdown = (signal) => {
+    logger.info(`${signal} received, shutting down gracefully...`);
+    server.close(() => {
+      logger.success('HTTP server closed');
+      process.exit(0);
+    });
+
+    // Force exit after 10s if server hasn't closed
+    setTimeout(() => {
+      logger.warn('Forcing shutdown after timeout');
+      process.exit(1);
+    }, 10000);
+  };
+
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
 }
 
 module.exports = { startDashboard };
