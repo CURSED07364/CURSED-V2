@@ -68,7 +68,8 @@ module.exports = {
       }
     }
 
-    // 5. AI CHAT CHANNEL AUTO-RESPONDER
+    // 5. AI CHAT CHANNEL AUTO-RESPONDER - DISABLED FOR MODERATION BUILD
+    /*
     const isMentioned = message.mentions.has(client.user.id) && !message.mentions.everyone;
     const isAiChannel = guildSettings.ai?.activeChannels?.includes(message.channel.id);
 
@@ -107,6 +108,7 @@ module.exports = {
         await message.reply('⚠️ Sorry, my AI circuits are currently overloaded. Please try again in a few seconds!');
       }
     }
+    */
   }
 };
 
