@@ -9,9 +9,56 @@ const { sendModLog } = require('../../utils/modLogger');
 const logger = require('../../utils/logger');
 const { PermissionFlagsBits } = require('discord.js');
 
-// Simple in-memory maps for anti-spam and xp-cooldowns
-const antiSpamTracker = new Map(); // userId -> Array of timestamps
-const xpCooldownTracker = new Map(); // userId -> timestamp
+/**
+ * Memory-safe tracker that periodically evicts stale timestamp arrays,
+ * preventing unbounded Map growth and eventual OOM crashes.
+ */
+class MemorySafeTracker {
+  constructor(maxAge = 60000, cleanupInterval = 30000) {
+    this.data = new Map();
+    this.maxAge = maxAge;
+    this.cleanupInterval = cleanupInterval;
+    this.startCleanup();
+  }
+
+  startCleanup() {
+    this.cleanupTimer = setInterval(() => {
+      const now = Date.now();
+      for (const [key, timestamps] of this.data.entries()) {
+        const valid = timestamps.filter(t => now - t < this.maxAge);
+        if (valid.length === 0) {
+          this.data.delete(key);
+        } else {
+          this.data.set(key, valid);
+        }
+      }
+    }, this.cleanupInterval);
+  }
+
+  add(key, timestamp = Date.now()) {
+    const list = this.data.get(key) || [];
+    list.push(timestamp);
+    this.data.set(key, list);
+  }
+
+  getRecent(key, windowMs) {
+    const now = Date.now();
+    const list = this.data.get(key) || [];
+    return list.filter(t => now - t < windowMs);
+  }
+
+  clear() {
+    this.data.clear();
+  }
+
+  destroy() {
+    clearInterval(this.cleanupTimer);
+    this.data.clear();
+  }
+}
+
+const antiSpamTracker = new MemorySafeTracker(60000, 30000);  // userId -> timestamps
+const xpCooldownTracker = new MemorySafeTracker(60000, 30000); // userId -> timestamps
 
 module.exports = {
   once: false,
@@ -175,10 +222,8 @@ async function handleAutoMod(message, settings, client) {
 
   // E. Anti-Spam (Rate limiting messages)
   if (!ruleTriggered && settings.autoMod?.antiSpam?.enabled) {
-    const list = antiSpamTracker.get(author.id) || [];
-    const recent = list.filter(t => now - t < 5000); // Last 5s
-    recent.push(now);
-    antiSpamTracker.set(author.id, recent);
+    antiSpamTracker.add(author.id);
+    const recent = antiSpamTracker.getRecent(author.id, 5000); // Last 5s
 
     const threshold = settings.autoMod.antiSpam.threshold || 5;
     if (recent.length >= threshold) {
@@ -244,10 +289,10 @@ async function handleLeveling(message, xpMultiplier) {
   const now = Date.now();
 
   // 1-minute XP gain cooldown to prevent spamming
-  const lastXpTime = xpCooldownTracker.get(userId);
+  const lastXpTime = xpCooldownTracker.data.get(userId)?.[0];
   if (lastXpTime && (now - lastXpTime < 60000)) return;
 
-  xpCooldownTracker.set(userId, now);
+  xpCooldownTracker.add(userId);
 
   try {
     let user = await User.findOne({ discordId: userId });

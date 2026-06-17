@@ -1,5 +1,8 @@
 const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 const { sendModLog } = require('../../../utils/modLogger');
+const { validateModeration } = require('../../../utils/permissions');
+const { handleCommandError } = require('../../../utils/errorHandler');
+const cooldownService = require('../../../services/cooldownService');
 
 module.exports = {
   name: 'ban',
@@ -14,37 +17,48 @@ module.exports = {
   async execute(context, args, client) {
     const isInteraction = !context.author;
     const guild = context.guild;
-    const moderator = isInteraction ? context.user : context.author;
-
-    let targetUser;
-    let targetMember;
-    let reason = 'No reason provided';
-
-    if (isInteraction) {
-      targetUser = context.options.getUser('user');
-      targetMember = await guild.members.fetch(targetUser.id).catch(() => null);
-      reason = context.options.getString('reason') || reason;
-    } else {
-      if (!context.member.permissions.has(PermissionFlagsBits.BanMembers)) {
-        return context.reply('❌ You do not have permission to use this command.');
-      }
-      targetUser = context.mentions.users.first();
-      targetMember = targetUser ? await guild.members.fetch(targetUser.id).catch(() => null) : null;
-      reason = args.slice(1).join(' ') || reason;
-    }
-
-    if (!targetUser) {
-      const reply = '❌ User not found.';
-      return isInteraction ? context.reply({ content: reply, ephemeral: true }) : context.reply(reply);
-    }
+    const moderator = context.member; // GuildMember
 
     try {
-      // Check hierarchy if member exists in server
+      // 1. Check cooldown
+      const cooldown = cooldownService.check(moderator.id, 'ban');
+      if (cooldown.onCooldown) {
+        const seconds = Math.ceil(cooldown.remainingMs / 1000);
+        const reply = `⏱️ Please wait ${seconds}s before using this command again.`;
+        return isInteraction
+          ? context.reply({ content: reply, ephemeral: true })
+          : context.reply(reply);
+      }
+
+      // 2. Extract target and reason
+      let targetUser;
+      let targetMember;
+      let reason = 'No reason provided';
+
+      if (isInteraction) {
+        targetUser = context.options.getUser('user');
+        targetMember = await guild.members.fetch(targetUser.id).catch(() => null);
+        reason = context.options.getString('reason') || reason;
+      } else {
+        targetUser = context.mentions.users.first();
+        targetMember = targetUser ? await guild.members.fetch(targetUser.id).catch(() => null) : null;
+        reason = args.slice(1).join(' ') || reason;
+      }
+
+      if (!targetUser) {
+        const reply = '❌ User not found.';
+        return isInteraction ? context.reply({ content: reply, ephemeral: true }) : context.reply(reply);
+      }
+
+      // 3. Validate moderation permissions and role hierarchy (only if member is in server)
       if (targetMember) {
-        if (targetMember.roles.highest.position >= context.guild.members.me.roles.highest.position) {
-          const reply = '❌ I cannot ban this user as their role is higher than or equal to mine.';
-          return isInteraction ? context.reply({ content: reply, ephemeral: true }) : context.reply(reply);
+        const validation = await validateModeration(moderator, targetMember, guild, 'BAN');
+        if (!validation.valid) {
+          return isInteraction
+            ? context.reply({ content: validation.reason, ephemeral: true })
+            : context.reply(validation.reason);
         }
+
         if (!targetMember.bannable) {
           const reply = '❌ I cannot ban this user.';
           return isInteraction ? context.reply({ content: reply, ephemeral: true }) : context.reply(reply);
@@ -52,8 +66,11 @@ module.exports = {
       }
 
       await guild.members.ban(targetUser.id, { reason });
-      
-      await sendModLog(client, guild, 'BAN', targetUser, moderator, reason);
+
+      // 4. Set cooldown
+      cooldownService.set(moderator.id, 'ban', 3000);
+
+      await sendModLog(client, guild, 'BAN', targetUser, moderator.user, reason);
 
       const successReply = `✅ **${targetUser.tag}** has been banned.`;
       if (isInteraction) {
@@ -62,12 +79,7 @@ module.exports = {
         await context.reply(successReply);
       }
     } catch (err) {
-      const errorReply = `❌ Failed to ban: ${err.message}`;
-      if (isInteraction) {
-        await context.reply({ content: errorReply, ephemeral: true });
-      } else {
-        await context.reply(errorReply);
-      }
+      await handleCommandError(err, context, 'ban');
     }
   }
 };

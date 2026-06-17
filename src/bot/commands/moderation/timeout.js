@@ -1,5 +1,8 @@
 const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 const { sendModLog } = require('../../../utils/modLogger');
+const { validateModeration } = require('../../../utils/permissions');
+const { handleCommandError } = require('../../../utils/errorHandler');
+const cooldownService = require('../../../services/cooldownService');
 
 function parseDuration(str) {
   const match = str.match(/^(\d+)([mhd])$/i);
@@ -28,53 +31,66 @@ module.exports = {
   async execute(context, args, client) {
     const isInteraction = !context.author;
     const guild = context.guild;
-    const moderator = isInteraction ? context.user : context.author;
-
-    let targetMember;
-    let durationStr;
-    let reason = 'No reason provided';
-
-    if (isInteraction) {
-      const user = context.options.getUser('user');
-      targetMember = await guild.members.fetch(user.id).catch(() => null);
-      durationStr = context.options.getString('duration');
-      reason = context.options.getString('reason') || reason;
-    } else {
-      if (!context.member.permissions.has(PermissionFlagsBits.ModerateMembers)) {
-        return context.reply('❌ You do not have permission to use this command.');
-      }
-      const user = context.mentions.users.first();
-      targetMember = user ? await guild.members.fetch(user.id).catch(() => null) : null;
-      durationStr = args[1];
-      reason = args.slice(2).join(' ') || reason;
-    }
-
-    if (!targetMember) {
-      const reply = '❌ User not found in this server.';
-      return isInteraction ? context.reply({ content: reply, ephemeral: true }) : context.reply(reply);
-    }
-
-    if (!durationStr) {
-      const reply = '❌ Please specify a duration (e.g. `10m`, `1h`, `1d`).';
-      return isInteraction ? context.reply({ content: reply, ephemeral: true }) : context.reply(reply);
-    }
-
-    const durationMs = parseDuration(durationStr);
-    if (!durationMs) {
-      const reply = '❌ Invalid duration format. Use e.g. `10m`, `2h`, `1d`.';
-      return isInteraction ? context.reply({ content: reply, ephemeral: true }) : context.reply(reply);
-    }
+    const moderator = context.member; // GuildMember
 
     try {
-      // Check hierarchy
-      if (targetMember.roles.highest.position >= context.guild.members.me.roles.highest.position) {
-        const reply = '❌ I cannot timeout this user as their role is higher than or equal to mine.';
+      // 1. Check cooldown
+      const cooldown = cooldownService.check(moderator.id, 'timeout');
+      if (cooldown.onCooldown) {
+        const seconds = Math.ceil(cooldown.remainingMs / 1000);
+        const reply = `⏱️ Please wait ${seconds}s before using this command again.`;
+        return isInteraction
+          ? context.reply({ content: reply, ephemeral: true })
+          : context.reply(reply);
+      }
+
+      // 2. Extract target, duration, reason
+      let targetMember;
+      let durationStr;
+      let reason = 'No reason provided';
+
+      if (isInteraction) {
+        const user = context.options.getUser('user');
+        targetMember = await guild.members.fetch(user.id).catch(() => null);
+        durationStr = context.options.getString('duration');
+        reason = context.options.getString('reason') || reason;
+      } else {
+        const user = context.mentions.users.first();
+        targetMember = user ? await guild.members.fetch(user.id).catch(() => null) : null;
+        durationStr = args[1];
+        reason = args.slice(2).join(' ') || reason;
+      }
+
+      if (!targetMember) {
+        const reply = '❌ User not found in this server.';
         return isInteraction ? context.reply({ content: reply, ephemeral: true }) : context.reply(reply);
       }
 
+      if (!durationStr) {
+        const reply = '❌ Please specify a duration (e.g. `10m`, `1h`, `1d`).';
+        return isInteraction ? context.reply({ content: reply, ephemeral: true }) : context.reply(reply);
+      }
+
+      const durationMs = parseDuration(durationStr);
+      if (!durationMs) {
+        const reply = '❌ Invalid duration format. Use e.g. `10m`, `2h`, `1d`.';
+        return isInteraction ? context.reply({ content: reply, ephemeral: true }) : context.reply(reply);
+      }
+
+      // 3. Validate moderation permissions and role hierarchy
+      const validation = await validateModeration(moderator, targetMember, guild, 'TIMEOUT');
+      if (!validation.valid) {
+        return isInteraction
+          ? context.reply({ content: validation.reason, ephemeral: true })
+          : context.reply(validation.reason);
+      }
+
       await targetMember.timeout(durationMs, reason);
-      
-      await sendModLog(client, guild, 'TIMEOUT', targetMember.user, moderator, reason, [
+
+      // 4. Set cooldown
+      cooldownService.set(moderator.id, 'timeout', 3000);
+
+      await sendModLog(client, guild, 'TIMEOUT', targetMember.user, moderator.user, reason, [
         { name: 'Duration', value: durationStr, inline: true }
       ]);
 
@@ -85,12 +101,7 @@ module.exports = {
         await context.reply(successReply);
       }
     } catch (err) {
-      const errorReply = `❌ Failed to timeout: ${err.message}`;
-      if (isInteraction) {
-        await context.reply({ content: errorReply, ephemeral: true });
-      } else {
-        await context.reply(errorReply);
-      }
+      await handleCommandError(err, context, 'timeout');
     }
   }
 };
