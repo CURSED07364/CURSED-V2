@@ -1,5 +1,8 @@
 const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
 const { sendModLog } = require('../../../utils/modLogger');
+const { validateModeration } = require('../../../utils/permissions');
+const { handleCommandError } = require('../../../utils/errorHandler');
+const cooldownService = require('../../../services/cooldownService');
 
 module.exports = {
   name: 'mute',
@@ -14,37 +17,47 @@ module.exports = {
   async execute(context, args, client) {
     const isInteraction = !context.author;
     const guild = context.guild;
-    const moderator = isInteraction ? context.user : context.author;
-
-    let targetMember;
-    let reason = 'No reason provided';
-
-    if (isInteraction) {
-      const user = context.options.getUser('user');
-      targetMember = await guild.members.fetch(user.id).catch(() => null);
-      reason = context.options.getString('reason') || reason;
-    } else {
-      if (!context.member.permissions.has(PermissionFlagsBits.ModerateMembers)) {
-        return context.reply('❌ You do not have permission to use this command.');
-      }
-      const user = context.mentions.users.first();
-      targetMember = user ? await guild.members.fetch(user.id).catch(() => null) : null;
-      reason = args.slice(1).join(' ') || reason;
-    }
-
-    if (!targetMember) {
-      const reply = '❌ User not found in this server.';
-      return isInteraction ? context.reply({ content: reply, ephemeral: true }) : context.reply(reply);
-    }
+    const moderator = context.member; // GuildMember
 
     try {
-      // Check hierarchy
-      if (targetMember.roles.highest.position >= context.guild.members.me.roles.highest.position) {
-        const reply = '❌ I cannot mute this user as their role is higher than or equal to mine.';
+      // 1. Check cooldown
+      const cooldown = cooldownService.check(moderator.id, 'mute');
+      if (cooldown.onCooldown) {
+        const seconds = Math.ceil(cooldown.remainingMs / 1000);
+        const reply = `⏱️ Please wait ${seconds}s before using this command again.`;
+        return isInteraction
+          ? context.reply({ content: reply, ephemeral: true })
+          : context.reply(reply);
+      }
+
+      // 2. Extract target and reason
+      let targetMember;
+      let reason = 'No reason provided';
+
+      if (isInteraction) {
+        const user = context.options.getUser('user');
+        targetMember = await guild.members.fetch(user.id).catch(() => null);
+        reason = context.options.getString('reason') || reason;
+      } else {
+        const user = context.mentions.users.first();
+        targetMember = user ? await guild.members.fetch(user.id).catch(() => null) : null;
+        reason = args.slice(1).join(' ') || reason;
+      }
+
+      if (!targetMember) {
+        const reply = '❌ User not found in this server.';
         return isInteraction ? context.reply({ content: reply, ephemeral: true }) : context.reply(reply);
       }
 
-      // Find or create 'Muted' role
+      // 3. Validate moderation permissions and role hierarchy
+      const validation = await validateModeration(moderator, targetMember, guild, 'MUTE');
+      if (!validation.valid) {
+        return isInteraction
+          ? context.reply({ content: validation.reason, ephemeral: true })
+          : context.reply(validation.reason);
+      }
+
+      // 4. Find or create 'Muted' role
       let mutedRole = guild.roles.cache.find(r => r.name.toLowerCase() === 'muted');
       if (!mutedRole) {
         mutedRole = await guild.roles.create({
@@ -69,8 +82,11 @@ module.exports = {
       }
 
       await targetMember.roles.add(mutedRole);
-      
-      await sendModLog(client, guild, 'MUTE', targetMember.user, moderator, reason);
+
+      // 5. Set cooldown
+      cooldownService.set(moderator.id, 'mute', 3000);
+
+      await sendModLog(client, guild, 'MUTE', targetMember.user, moderator.user, reason);
 
       const successReply = `✅ **${targetMember.user.tag}** has been muted.`;
       if (isInteraction) {
@@ -79,12 +95,7 @@ module.exports = {
         await context.reply(successReply);
       }
     } catch (err) {
-      const errorReply = `❌ Failed to mute: ${err.message}`;
-      if (isInteraction) {
-        await context.reply({ content: errorReply, ephemeral: true });
-      } else {
-        await context.reply(errorReply);
-      }
+      await handleCommandError(err, context, 'mute');
     }
   }
 };

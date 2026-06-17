@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const { connectDatabase } = require('./database/connection');
 const client = require('./bot/client');
 const { loadCommands, loadEvents, registerSlashCommands } = require('./bot/handler');
@@ -31,26 +32,31 @@ process.on('uncaughtException', (err) => {
 
 async function bootstrap() {
   logger.info('==========================================');
-  logger.info('   CURSED SAAS BOT BOOTSTRAP SEQUENCE     ');
+  logger.info('   CURSED V2 MODERATION BOT STARTUP      ');
   logger.info('==========================================');
 
   try {
     // 0. Validate environment variables
+    logger.info('Validating environment variables...');
     validateEnv();
 
     // 1. Establish database connection
+    logger.info('Connecting to MongoDB...');
     await connectDatabase();
+    logger.success('✅ MongoDB connected');
 
     // 2. Load bot commands & events
     logger.info('Loading bot systems...');
     loadCommands(client);
     loadEvents(client);
+    logger.success('✅ Commands and events loaded');
 
     // 3. Connect to Discord Gateway
     logger.info('Connecting to Discord Gateway...');
     await client.login(config.discord.token);
+    logger.success('✅ Discord client connected');
 
-    // 4. Register slash commands (Runs globally in background)
+    // 4. Register slash commands
     registerSlashCommands(client).catch(err => {
       logger.error('Failed to register slash commands:', err);
     });
@@ -61,12 +67,27 @@ async function bootstrap() {
     // 6. Launch Web Dashboard & Webhooks
     startDashboard(client);
 
-    logger.success('CURSED SaaS Bot successfully initialized and running.');
+    logger.success('✅ CURSED V2 is online and ready!');
   } catch (err) {
-    logger.error('Bootstrap sequence failed. Shutting down.', err);
+    logger.error('❌ Bootstrap sequence failed:', err);
     process.exit(1);
   }
 }
 
-// Fire!
+// Graceful shutdown — ensures Discord gateway and DB connections are closed
+// cleanly on Railway deploys / container stops.
+process.on('SIGTERM', async () => {
+  logger.info('SIGTERM received, shutting down gracefully...');
+  client.destroy();
+  await mongoose.connection.close();
+  process.exit(0);
+});
+
+process.on('SIGINT', async () => {
+  logger.info('SIGINT received, shutting down gracefully...');
+  client.destroy();
+  await mongoose.connection.close();
+  process.exit(0);
+});
+
 bootstrap();
