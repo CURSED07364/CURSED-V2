@@ -148,9 +148,13 @@ function startDashboard(client) {
   // DASHBOARD PAGES
   // ==========================================
 
-  app.get('/', (req, res) => {
-    res.render('landing', { user: req.session.user });
+app.get('/', (req, res) => {
+  res.render('landing', {
+    user: req.session.user,
+    config
   });
+});
+ 
 
   app.get('/dashboard', checkAuth, async (req, res) => {
     // Filter guilds where user has MANAGE_GUILD
