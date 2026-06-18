@@ -75,14 +75,32 @@ function startDashboard(client) {
 
   app.get('/auth', (req, res) => {
     const redirectUrl = `https://discord.com/api/oauth2/authorize?client_id=${config.discord.clientId}&redirect_uri=${encodeURIComponent(config.discord.redirectUri)}&response_type=code&scope=identify%20guilds`;
+
+    // Log the full authorization URL so mismatches are immediately visible
+    if (process.env.NODE_ENV !== 'production' || process.env.DEBUG === 'true') {
+      logger.debug('OAuth2 Authorization URL:');
+      logger.debug(`  ${redirectUrl}`);
+    }
+
     res.redirect(redirectUrl);
   });
 
   app.get('/auth/callback', async (req, res) => {
     const code = req.query.code;
-    if (!code) return res.redirect('/');
+    if (!code) {
+      logger.warn('OAuth2 callback received without authorization code');
+      return res.redirect('/');
+    }
 
     try {
+      // Log token exchange attempt so redirect URI is visible in logs
+      if (process.env.NODE_ENV !== 'production' || process.env.DEBUG === 'true') {
+        logger.debug('OAuth2 Token Exchange:');
+        logger.debug(`  • Client ID: ${config.discord.clientId}`);
+        logger.debug(`  • Redirect URI: ${config.discord.redirectUri}`);
+        logger.debug(`  • Code: ${code.substring(0, 10)}...`);
+      }
+
       // Exchange code for token
       const tokenResponse = await axios.post('https://discord.com/api/v10/oauth2/token', new URLSearchParams({
         client_id: config.discord.clientId,
@@ -110,10 +128,23 @@ function startDashboard(client) {
       req.session.user = userResponse.data;
       req.session.guilds = guildsResponse.data;
 
+      logger.info(`OAuth2 login successful for user ${userResponse.data.username}#${userResponse.data.discriminator}`);
       res.redirect('/dashboard');
     } catch (err) {
       logger.error('OAuth2 login failure:', err.message);
-      res.status(500).send('Authentication failed. Please check client credentials and redirect URI.');
+
+      // Provide a specific error message to help diagnose the failure
+      let errorMessage = 'Authentication failed. ';
+      if (err.response?.status === 400) {
+        errorMessage += 'Invalid authorization code or redirect URI mismatch. ';
+        errorMessage += `Verify that the redirect URI in Discord Developer Portal matches: ${config.discord.redirectUri}`;
+      } else if (err.response?.status === 401) {
+        errorMessage += 'Invalid client credentials. Check DISCORD_CLIENT_ID and DISCORD_CLIENT_SECRET.';
+      } else {
+        errorMessage += 'Please check client credentials and redirect URI.';
+      }
+
+      res.status(500).send(errorMessage);
     }
   });
 

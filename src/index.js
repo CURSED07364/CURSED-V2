@@ -40,6 +40,12 @@ async function bootstrap() {
     logger.info('Validating environment variables...');
     validateEnv();
 
+    // Log OAuth configuration so the exact redirect URI is visible in deploy logs
+    logger.info('OAuth2 Configuration:');
+    logger.info(`  • DISCORD_CLIENT_ID: ${config.discord.clientId}`);
+    logger.info(`  • DASHBOARD_URL: ${config.dashboard.url}`);
+    logger.info(`  • Redirect URI: ${config.discord.redirectUri}`);
+
     // 1. Establish database connection
     logger.info('Connecting to MongoDB...');
     await connectDatabase();
