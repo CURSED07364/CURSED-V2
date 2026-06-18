@@ -5,6 +5,42 @@ const path = require('path');
 dotenv.config();
 
 /**
+ * Validates DASHBOARD_URL format and returns the canonical URL.
+ * Rejects common mistakes like trailing slashes, HTTP in production, etc.
+ */
+function validateDashboardUrl() {
+  let url = process.env.DASHBOARD_URL || 'http://localhost:3000';
+
+  // Trim whitespace
+  url = url.trim();
+
+  // Reject trailing slashes
+  if (url.endsWith('/')) {
+    console.error('❌ DASHBOARD_URL must not have a trailing slash');
+    console.error(`   Got: "${url}"`);
+    console.error(`   Expected: "${url.slice(0, -1)}"`);
+    process.exit(1);
+  }
+
+  // Reject HTTP in production
+  if (process.env.NODE_ENV === 'production' && url.startsWith('http://')) {
+    console.error('❌ DASHBOARD_URL must use HTTPS in production');
+    console.error(`   Got: "${url}"`);
+    console.error(`   Expected: "https://..."`);
+    process.exit(1);
+  }
+
+  // Reject localhost in production
+  if (process.env.NODE_ENV === 'production' && url.includes('localhost')) {
+    console.error('❌ DASHBOARD_URL cannot be localhost in production');
+    console.error(`   Got: "${url}"`);
+    process.exit(1);
+  }
+
+  return url;
+}
+
+/**
  * Validates environment variables on startup.
  * Fails fast with clear, actionable error messages rather than cryptic
  * runtime failures deep inside the application.
@@ -16,6 +52,7 @@ function validateEnvironment() {
   const required = [
     'DISCORD_TOKEN',
     'DISCORD_CLIENT_ID',
+    'DISCORD_CLIENT_SECRET',  // Required for OAuth token exchange
     'MONGODB_URI'
   ];
 
@@ -38,6 +75,10 @@ function validateEnvironment() {
     errors.push('DISCORD_CLIENT_ID must be a valid Discord snowflake (17-20 digits)');
   }
 
+  if (process.env.DISCORD_CLIENT_SECRET && process.env.DISCORD_CLIENT_SECRET.length < 30) {
+    errors.push('DISCORD_CLIENT_SECRET appears to be invalid (too short)');
+  }
+
   if (errors.length > 0) {
     console.error('\n❌ ENVIRONMENT VALIDATION FAILED:\n');
     errors.forEach(err => console.error(`  • ${err}`));
@@ -50,17 +91,19 @@ function validateEnvironment() {
 
 validateEnvironment();
 
-module.exports = {
+const dashboardUrl = validateDashboardUrl();
+
+const config = {
   port: parseInt(process.env.PORT, 10) || 3000,
   mongoUri: process.env.MONGODB_URI,
   discord: {
     token: process.env.DISCORD_TOKEN,
     clientId: process.env.DISCORD_CLIENT_ID,
     clientSecret: process.env.DISCORD_CLIENT_SECRET,
-    redirectUri: `${process.env.DASHBOARD_URL || 'http://localhost:3000'}/auth/callback`
+    redirectUri: `${dashboardUrl}/auth/callback`
   },
   dashboard: {
-    url: process.env.DASHBOARD_URL || 'http://localhost:3000',
+    url: dashboardUrl,
     port: parseInt(process.env.PORT || '3000', 10),
     sessionSecret: process.env.SESSION_SECRET,
   },
@@ -79,3 +122,14 @@ module.exports = {
   },
   admins: (process.env.ADMIN_DISCORD_IDS || '').split(',').map(id => id.trim()).filter(Boolean)
 };
+
+// Log OAuth configuration on startup to verify exact values in use
+if (process.env.NODE_ENV !== 'production' || process.env.DEBUG === 'true') {
+  console.log('\n📋 OAuth2 Configuration:');
+  console.log(`   DISCORD_CLIENT_ID: ${config.discord.clientId}`);
+  console.log(`   DASHBOARD_URL: ${config.dashboard.url}`);
+  console.log(`   Redirect URI: ${config.discord.redirectUri}`);
+  console.log('');
+}
+
+module.exports = config;
