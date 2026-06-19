@@ -4,25 +4,18 @@ const autoModRuleSchema = new mongoose.Schema({
   enabled: { type: Boolean, default: false },
   whitelistRoles: [{ type: String }],
   whitelistChannels: [{ type: String }],
-  severity: { type: String, enum: ['WARN', 'TIMEOUT', 'MUTE', 'KICK', 'BAN'], default: 'WARN' },
-  threshold: { type: Number, default: 5 } // specific variables like message limits for spam
+  action: { type: String, enum: ['WARN', 'TIMEOUT', 'KICK', 'BAN'], default: 'WARN' },
+  threshold: { type: Number, default: 5 }
 }, { _id: false });
 
 const guildSchema = new mongoose.Schema({
   guildId: { type: String, required: true, unique: true, index: true },
   name: { type: String, required: true },
   prefix: { type: String, default: '!' },
-  
-  // Channels
+
+  // Moderation
   logChannelId: { type: String, default: null },
-  welcomeChannelId: { type: String, default: null },
-  welcomeMessage: { type: String, default: 'Welcome {user} to CURSED!' },
-  
-  // Premium Server Integration
-  isPremium: { type: Boolean, default: false, index: true },
-  premiumTier: { type: String, enum: ['FREE', 'PREMIUM', 'PREMIUM+'], default: 'FREE' },
-  premiumByUserId: { type: String, default: null },
-  premiumExpiresAt: { type: Date, default: null },
+  modRoleId: { type: String, default: null },
 
   // AutoMod configurations
   autoMod: {
@@ -30,7 +23,8 @@ const guildSchema = new mongoose.Schema({
     antiLink: { type: autoModRuleSchema, default: () => ({}) },
     antiInvite: { type: autoModRuleSchema, default: () => ({}) },
     antiScam: { type: autoModRuleSchema, default: () => ({}) },
-    antiMassMention: { type: autoModRuleSchema, default: () => ({}) }
+    antiMassMention: { type: autoModRuleSchema, default: () => ({}) },
+    antiRaid: { type: autoModRuleSchema, default: () => ({}) }
   },
 
   // Support Tickets System
@@ -40,12 +34,11 @@ const guildSchema = new mongoose.Schema({
     ticketCount: { type: Number, default: 0 }
   },
 
-  // Guild Specific Custom AI personality
-  ai: {
-    personality: { type: String, default: 'You are CURSED, a dark, slightly sarcastic, but incredibly helpful AI assistant.' },
-    aimode: { type: String, enum: ['STANDARD', 'CREATIVE', 'STRICT'], default: 'STANDARD' },
-    activeChannels: [{ type: String }] // channels where bot auto-replies to chat
-  }
+  // Logging toggles
+  logMessageDeletes: { type: Boolean, default: true },
+  logMessageEdits: { type: Boolean, default: true },
+  logMemberJoins: { type: Boolean, default: true },
+  logMemberLeaves: { type: Boolean, default: true }
 }, {
   timestamps: true
 });

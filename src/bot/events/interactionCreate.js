@@ -17,9 +17,9 @@ module.exports = {
         logger.error(`Slash command error: /${commandName}:`, err);
         const reply = { content: '❌ An error occurred while executing this command.', ephemeral: true };
         if (interaction.replied || interaction.deferred) {
-          await interaction.followUp(reply);
+          await interaction.followUp(reply).catch(() => {});
         } else {
-          await interaction.reply(reply);
+          await interaction.reply(reply).catch(() => {});
         }
       }
     }
@@ -31,7 +31,7 @@ module.exports = {
       if (customId === 'close_ticket_btn') {
         const closeTicketCmd = require('../commands/ticket/closeticket');
         try {
-          // Fake message context for the command
+          // Adapt the button interaction into the message-style context closeticket expects
           const fakeMessage = {
             channel: interaction.channel,
             guild: interaction.guild,

@@ -4,64 +4,60 @@ const cooldownService = require('../../../services/cooldownService');
 
 module.exports = {
   name: 'purge',
-  aliases: ['clear', 'clean'],
   description: 'Bulk delete messages from the current channel.',
   data: new SlashCommandBuilder()
     .setName('purge')
-    .setDescription('Delete messages.')
-    .addIntegerOption(opt => opt.setName('amount').setDescription('Number of messages to delete (1-100)').setRequired(true))
+    .setDescription('Bulk delete messages from the current channel.')
+    .addIntegerOption(opt =>
+      opt.setName('amount')
+        .setDescription('Number of messages to delete (1-100)')
+        .setMinValue(1)
+        .setMaxValue(100)
+        .setRequired(true)
+    )
+    .addUserOption(opt =>
+      opt.setName('user')
+        .setDescription('Only delete messages from this user')
+        .setRequired(false)
+    )
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages),
 
-  async execute(context, args, client) {
-    const isInteraction = !context.author;
-    const channel = context.channel;
-    const moderator = context.member; // GuildMember
-
+  async execute(interaction, args, client) {
     try {
-      // 1. Check cooldown
+      const moderator = interaction.member;
+      const channel = interaction.channel;
+
+      // 1. Cooldown check
       const cooldown = cooldownService.check(moderator.id, 'purge');
       if (cooldown.onCooldown) {
         const seconds = Math.ceil(cooldown.remainingMs / 1000);
-        const reply = `⏱️ Please wait ${seconds}s before using this command again.`;
-        return isInteraction
-          ? context.reply({ content: reply, ephemeral: true })
-          : context.reply(reply);
+        return interaction.reply({ content: `⏱️ Please wait ${seconds}s before using this command again.`, ephemeral: true });
       }
 
-      // 2. Extract amount
-      let amount;
+      // 2. Extract options
+      const amount = interaction.options.getInteger('amount');
+      const filterUser = interaction.options.getUser('user');
 
-      if (isInteraction) {
-        amount = context.options.getInteger('amount');
-      } else {
-        if (!context.member.permissions.has(PermissionFlagsBits.ManageMessages)) {
-          return context.reply('❌ You do not have permission to use this command.');
-        }
-        amount = parseInt(args[0], 10);
+      await interaction.deferReply({ ephemeral: true });
+
+      // 3. Fetch and optionally filter messages
+      let messages = await channel.messages.fetch({ limit: filterUser ? 100 : amount });
+
+      if (filterUser) {
+        messages = messages.filter(m => m.author.id === filterUser.id).first(amount);
       }
 
-      if (isNaN(amount) || amount < 1 || amount > 100) {
-        const reply = '❌ Please specify a valid amount of messages to delete between 1 and 100.';
-        return isInteraction ? context.reply({ content: reply, ephemeral: true }) : context.reply(reply);
-      }
+      const deleted = await channel.bulkDelete(messages, true);
 
-      const deleted = await channel.bulkDelete(amount, true);
-
-      // 3. Set cooldown
+      // 4. Set cooldown
       cooldownService.set(moderator.id, 'purge', 5000);
 
-      const successReply = `🧹 Successfully deleted **${deleted.size}** messages.`;
+      await interaction.editReply({ content: `🧹 Successfully deleted **${deleted.size}** message(s).` });
 
-      if (isInteraction) {
-        await context.reply({ content: successReply });
-        // Auto-delete interaction response after 3s
-        setTimeout(() => context.deleteReply().catch(() => {}), 3000);
-      } else {
-        const msg = await context.channel.send(successReply);
-        setTimeout(() => msg.delete().catch(() => {}), 3000);
-      }
+      // Auto-delete the ephemeral reply after 5s
+      setTimeout(() => interaction.deleteReply().catch(() => {}), 5000);
     } catch (err) {
-      await handleCommandError(err, context, 'purge');
+      await handleCommandError(err, interaction, 'purge');
     }
   }
 };

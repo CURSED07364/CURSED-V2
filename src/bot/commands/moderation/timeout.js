@@ -1,15 +1,17 @@
-const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
-const { sendModLog } = require('../../../utils/modLogger');
+const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
+const caseService = require('../../../services/caseService');
+const loggingService = require('../../../services/loggingService');
 const { validateModeration } = require('../../../utils/permissions');
 const { handleCommandError } = require('../../../utils/errorHandler');
 const cooldownService = require('../../../services/cooldownService');
 
 function parseDuration(str) {
-  const match = str.match(/^(\d+)([mhd])$/i);
+  const match = str.match(/^(\d+)([smhd])$/i);
   if (!match) return null;
   const val = parseInt(match[1], 10);
   const unit = match[2].toLowerCase();
   switch (unit) {
+    case 's': return val * 1000;
     case 'm': return val * 60 * 1000;
     case 'h': return val * 60 * 60 * 1000;
     case 'd': return val * 24 * 60 * 60 * 1000;
@@ -24,84 +26,85 @@ module.exports = {
     .setName('timeout')
     .setDescription('Timeout a member.')
     .addUserOption(opt => opt.setName('user').setDescription('The user to timeout').setRequired(true))
-    .addStringOption(opt => opt.setName('duration').setDescription('Duration (e.g. 10m, 1h, 1d)').setRequired(true))
-    .addStringOption(opt => opt.setName('reason').setDescription('The reason for timeout').setRequired(false))
+    .addStringOption(opt => opt.setName('duration').setDescription('Duration (e.g. 10m, 1h, 1d — max 28d)').setRequired(true))
+    .addStringOption(opt => opt.setName('reason').setDescription('Reason for the timeout').setRequired(false))
     .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers),
 
-  async execute(context, args, client) {
-    const isInteraction = !context.author;
-    const guild = context.guild;
-    const moderator = context.member; // GuildMember
-
+  async execute(interaction, args, client) {
     try {
-      // 1. Check cooldown
+      const guild = interaction.guild;
+      const moderator = interaction.member;
+
+      // 1. Cooldown check
       const cooldown = cooldownService.check(moderator.id, 'timeout');
       if (cooldown.onCooldown) {
         const seconds = Math.ceil(cooldown.remainingMs / 1000);
-        const reply = `⏱️ Please wait ${seconds}s before using this command again.`;
-        return isInteraction
-          ? context.reply({ content: reply, ephemeral: true })
-          : context.reply(reply);
+        return interaction.reply({ content: `⏱️ Please wait ${seconds}s before using this command again.`, ephemeral: true });
       }
 
-      // 2. Extract target, duration, reason
-      let targetMember;
-      let durationStr;
-      let reason = 'No reason provided';
-
-      if (isInteraction) {
-        const user = context.options.getUser('user');
-        targetMember = await guild.members.fetch(user.id).catch(() => null);
-        durationStr = context.options.getString('duration');
-        reason = context.options.getString('reason') || reason;
-      } else {
-        const user = context.mentions.users.first();
-        targetMember = user ? await guild.members.fetch(user.id).catch(() => null) : null;
-        durationStr = args[1];
-        reason = args.slice(2).join(' ') || reason;
-      }
+      // 2. Extract options
+      const targetUser = interaction.options.getUser('user');
+      const durationStr = interaction.options.getString('duration');
+      const reason = interaction.options.getString('reason') || 'No reason provided';
+      const targetMember = await guild.members.fetch(targetUser.id).catch(() => null);
 
       if (!targetMember) {
-        const reply = '❌ User not found in this server.';
-        return isInteraction ? context.reply({ content: reply, ephemeral: true }) : context.reply(reply);
-      }
-
-      if (!durationStr) {
-        const reply = '❌ Please specify a duration (e.g. `10m`, `1h`, `1d`).';
-        return isInteraction ? context.reply({ content: reply, ephemeral: true }) : context.reply(reply);
+        return interaction.reply({ content: '❌ User not found in this server.', ephemeral: true });
       }
 
       const durationMs = parseDuration(durationStr);
       if (!durationMs) {
-        const reply = '❌ Invalid duration format. Use e.g. `10m`, `2h`, `1d`.';
-        return isInteraction ? context.reply({ content: reply, ephemeral: true }) : context.reply(reply);
+        return interaction.reply({ content: '❌ Invalid duration format. Use e.g. `10m`, `2h`, `1d`.', ephemeral: true });
       }
 
-      // 3. Validate moderation permissions and role hierarchy
+      // Discord max timeout is 28 days
+      const MAX_TIMEOUT = 28 * 24 * 60 * 60 * 1000;
+      if (durationMs > MAX_TIMEOUT) {
+        return interaction.reply({ content: '❌ Timeout duration cannot exceed 28 days.', ephemeral: true });
+      }
+
+      // 3. Validate
       const validation = await validateModeration(moderator, targetMember, guild, 'TIMEOUT');
       if (!validation.valid) {
-        return isInteraction
-          ? context.reply({ content: validation.reason, ephemeral: true })
-          : context.reply(validation.reason);
+        return interaction.reply({ content: validation.reason, ephemeral: true });
       }
 
+      // 4. Execute timeout
       await targetMember.timeout(durationMs, reason);
 
-      // 4. Set cooldown
+      // 5. Create case
+      const caseData = await caseService.createCase(guild.id, targetUser.id, moderator.id, 'TIMEOUT', reason, durationMs);
+
+      // 6. Set cooldown
       cooldownService.set(moderator.id, 'timeout', 3000);
 
-      await sendModLog(client, guild, 'TIMEOUT', targetMember.user, moderator.user, reason, [
-        { name: 'Duration', value: durationStr, inline: true }
-      ]);
+      // 7. DM user
+      const dmEmbed = new EmbedBuilder()
+        .setTitle(`⏱️ Timed Out in ${guild.name}`)
+        .setDescription(`You have been timed out for **${durationStr}**.\nReason: **${reason}**`)
+        .setColor('#FFA500')
+        .setTimestamp();
+      await targetUser.send({ embeds: [dmEmbed] }).catch(() => {});
 
-      const successReply = `✅ **${targetMember.user.tag}** has been timed out for ${durationStr}.`;
-      if (isInteraction) {
-        await context.reply({ content: successReply });
-      } else {
-        await context.reply(successReply);
-      }
+      // 8. Log
+      await loggingService.logModeration(guild, 'TIMEOUT', targetUser, moderator.user, reason, caseData.caseId);
+
+      return interaction.reply({
+        embeds: [
+          new EmbedBuilder()
+            .setTitle('✅ User Timed Out')
+            .addFields(
+              { name: 'User', value: `${targetUser.tag}`, inline: true },
+              { name: 'Duration', value: durationStr, inline: true },
+              { name: 'Case', value: `#${caseData.caseId}`, inline: true },
+              { name: 'Reason', value: reason }
+            )
+            .setColor('#FFA500')
+            .setTimestamp()
+        ]
+      });
     } catch (err) {
-      await handleCommandError(err, context, 'timeout');
+      await handleCommandError(err, interaction, 'timeout');
     }
   }
 };

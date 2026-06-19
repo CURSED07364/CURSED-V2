@@ -5,9 +5,12 @@ const warningSchema = new mongoose.Schema({
   userId: { type: String, required: true, index: true },
   moderatorId: { type: String, required: true },
   reason: { type: String, required: true },
+  caseId: { type: Number, default: null },
   active: { type: Boolean, default: true }
 }, {
   timestamps: true
 });
+
+warningSchema.index({ guildId: 1, userId: 1 });
 
 module.exports = mongoose.model('Warning', warningSchema);

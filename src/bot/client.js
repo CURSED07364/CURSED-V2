@@ -41,10 +41,10 @@ client.cooldowns = new BoundedCooldownCollection(10000);
 
 client.once('ready', () => {
   logger.success(`Logged in as ${client.user.tag}! Serving ${client.guilds.cache.size} servers.`);
-  
-  // Set basic activity
+
+  // Set moderation-focused activity
   client.user.setActivity({
-    name: 'over CURSED servers | !premium',
+    name: 'over your server | /help',
     type: 3 // Watching
   });
 });
